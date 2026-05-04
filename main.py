@@ -9,6 +9,9 @@ import requests
 
 app = FastAPI()
 
+# =========================
+# MODEL CONFIG
+# =========================
 MODEL_PATH = "mobilenetv2_final_model.keras"
 CLASS_NAMES_PATH = "class_names.json"
 IMAGE_SIZE = 256
@@ -18,14 +21,21 @@ model = tf.keras.models.load_model(MODEL_PATH)
 with open(CLASS_NAMES_PATH, "r") as f:
     class_names = json.load(f)
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# =========================
+# API KEYS
+# =========================
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-
+# =========================
+# HOME
+# =========================
 @app.get("/")
 def home():
     return {"message": "Rice Leaf Disease API is running"}
 
-
+# =========================
+# PREDICTION API
+# =========================
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     try:
@@ -47,9 +57,7 @@ async def predict(file: UploadFile = File(...)):
         return {
             "success": True,
             "disease": disease_name,
-            "confidence": round(confidence, 2),
-            "class_index": class_index,
-            "raw_prediction": prediction[0].tolist()
+            "confidence": round(confidence, 2)
         }
 
     except Exception as e:
@@ -58,7 +66,9 @@ async def predict(file: UploadFile = File(...)):
             "error": str(e)
         }
 
-
+# =========================
+# CHAT API (GROQ)
+# =========================
 @app.post("/chat")
 async def chat(user_message: dict = Body(...)):
     try:
@@ -70,37 +80,44 @@ async def chat(user_message: dict = Body(...)):
                 "error": "Message is empty"
             }
 
-        if not GEMINI_API_KEY:
+        if not GROQ_API_KEY:
             return {
                 "success": False,
-                "error": "GEMINI_API_KEY is missing in Render environment variables"
+                "error": "GROQ_API_KEY is missing in Render"
             }
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+        url = "https://api.groq.com/openai/v1/chat/completions"
+
+        headers = {
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json"
+        }
 
         prompt = f"""
 You are an expert agriculture assistant for rice farmers.
-Answer simply and clearly.
-Focus only on rice leaf diseases, symptoms, prevention, and treatment.
-Use farmer-friendly language.
+
+Give simple, clear, and practical advice about:
+- Rice diseases
+- Symptoms
+- Prevention
+- Treatment
+
+Use easy language.
 
 User question:
 {message}
 """
 
         data = {
-            "contents": [
-                {
-                    "parts": [
-                        {
-                            "text": prompt
-                        }
-                    ]
-                }
-            ]
+            "model": "llama-3.1-8b-instant",
+            "messages": [
+                {"role": "system", "content": "You are an expert in rice plant diseases."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.7
         }
 
-        response = requests.post(url, json=data, timeout=60)
+        response = requests.post(url, headers=headers, json=data, timeout=60)
         result = response.json()
 
         if response.status_code != 200:
@@ -109,7 +126,7 @@ User question:
                 "error": result
             }
 
-        reply = result["candidates"][0]["content"]["parts"][0]["text"]
+        reply = result["choices"][0]["message"]["content"]
 
         return {
             "success": True,

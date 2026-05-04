@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Body
 from PIL import Image
 import tensorflow as tf
 import numpy as np
@@ -20,13 +20,12 @@ with open(CLASS_NAMES_PATH, "r") as f:
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
+
 @app.get("/")
 def home():
     return {"message": "Rice Leaf Disease API is running"}
 
-# =========================
-# Prediction API
-# =========================
+
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     try:
@@ -48,7 +47,9 @@ async def predict(file: UploadFile = File(...)):
         return {
             "success": True,
             "disease": disease_name,
-            "confidence": round(confidence, 2)
+            "confidence": round(confidence, 2),
+            "class_index": class_index,
+            "raw_prediction": prediction[0].tolist()
         }
 
     except Exception as e:
@@ -57,13 +58,23 @@ async def predict(file: UploadFile = File(...)):
             "error": str(e)
         }
 
-# =========================
-# Chat API (DeepSeek)
-# =========================
+
 @app.post("/chat")
-async def chat(user_message: dict):
+async def chat(user_message: dict = Body(...)):
     try:
-        message = user_message.get("message")
+        message = user_message.get("message", "")
+
+        if not message:
+            return {
+                "success": False,
+                "error": "Message is empty"
+            }
+
+        if not DEEPSEEK_API_KEY:
+            return {
+                "success": False,
+                "error": "DEEPSEEK_API_KEY is missing in Render environment variables"
+            }
 
         headers = {
             "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
@@ -73,18 +84,38 @@ async def chat(user_message: dict):
         data = {
             "model": "deepseek-chat",
             "messages": [
-                {"role": "system", "content": "You are an expert in rice plant diseases. Give simple, clear advice for farmers."},
-                {"role": "user", "content": message}
-            ]
+                {
+                    "role": "system",
+                    "content": "You are an expert in rice plant diseases. Give simple, clear advice for farmers. Answer in simple language."
+                },
+                {
+                    "role": "user",
+                    "content": message
+                }
+            ],
+            "temperature": 0.7
         }
 
         response = requests.post(
             "https://api.deepseek.com/chat/completions",
             headers=headers,
-            json=data
+            json=data,
+            timeout=60
         )
 
         result = response.json()
+
+        if response.status_code != 200:
+            return {
+                "success": False,
+                "error": result
+            }
+
+        if "choices" not in result:
+            return {
+                "success": False,
+                "error": result
+            }
 
         reply = result["choices"][0]["message"]["content"]
 

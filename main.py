@@ -64,60 +64,29 @@ async def chat(user_message: dict = Body(...)):
     try:
         message = user_message.get("message", "")
 
-        if not message:
-            return {
-                "success": False,
-                "error": "Message is empty"
-            }
+        API_KEY = os.getenv("GEMINI_API_KEY")
 
-        if not DEEPSEEK_API_KEY:
-            return {
-                "success": False,
-                "error": "DEEPSEEK_API_KEY is missing in Render environment variables"
-            }
+        if not API_KEY:
+            return {"success": False, "error": "Missing Gemini API key"}
 
-        headers = {
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-            "Content-Type": "application/json"
-        }
+        url = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY}"
 
         data = {
-            "model": "deepseek-chat",
-            "messages": [
+            "contents": [
                 {
-                    "role": "system",
-                    "content": "You are an expert in rice plant diseases. Give simple, clear advice for farmers. Answer in simple language."
-                },
-                {
-                    "role": "user",
-                    "content": message
+                    "parts": [
+                        {
+                            "text": f"You are an expert in rice diseases. Explain simply: {message}"
+                        }
+                    ]
                 }
-            ],
-            "temperature": 0.7
+            ]
         }
 
-        response = requests.post(
-            "https://api.deepseek.com/chat/completions",
-            headers=headers,
-            json=data,
-            timeout=60
-        )
-
+        response = requests.post(url, json=data)
         result = response.json()
 
-        if response.status_code != 200:
-            return {
-                "success": False,
-                "error": result
-            }
-
-        if "choices" not in result:
-            return {
-                "success": False,
-                "error": result
-            }
-
-        reply = result["choices"][0]["message"]["content"]
+        reply = result["candidates"][0]["content"]["parts"][0]["text"]
 
         return {
             "success": True,

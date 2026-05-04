@@ -18,7 +18,7 @@ model = tf.keras.models.load_model(MODEL_PATH)
 with open(CLASS_NAMES_PATH, "r") as f:
     class_names = json.load(f)
 
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 
 @app.get("/")
@@ -64,27 +64,50 @@ async def chat(user_message: dict = Body(...)):
     try:
         message = user_message.get("message", "")
 
-        API_KEY = os.getenv("GEMINI_API_KEY")
+        if not message:
+            return {
+                "success": False,
+                "error": "Message is empty"
+            }
 
-        if not API_KEY:
-            return {"success": False, "error": "Missing Gemini API key"}
+        if not GEMINI_API_KEY:
+            return {
+                "success": False,
+                "error": "GEMINI_API_KEY is missing in Render environment variables"
+            }
 
-        url = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+
+        prompt = f"""
+You are an expert agriculture assistant for rice farmers.
+Answer simply and clearly.
+Focus only on rice leaf diseases, symptoms, prevention, and treatment.
+Use farmer-friendly language.
+
+User question:
+{message}
+"""
 
         data = {
             "contents": [
                 {
                     "parts": [
                         {
-                            "text": f"You are an expert in rice diseases. Explain simply: {message}"
+                            "text": prompt
                         }
                     ]
                 }
             ]
         }
 
-        response = requests.post(url, json=data)
+        response = requests.post(url, json=data, timeout=60)
         result = response.json()
+
+        if response.status_code != 200:
+            return {
+                "success": False,
+                "error": result
+            }
 
         reply = result["candidates"][0]["content"]["parts"][0]["text"]
 
